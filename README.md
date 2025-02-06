@@ -1,4 +1,4 @@
-# SimFp - Simple File-Picker for ImGUI
+# SimpFp - Simple File-Picker for ImGUI
 
 ![Demo](https://github.com/henryco/simpfp/blob/master/media/1.png?raw=true)
 
