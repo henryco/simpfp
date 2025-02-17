@@ -645,23 +645,41 @@ namespace simpfp {
             }
         };
 
+        inline bool display(const bool should) {
+            if (!should)
+              return false;
+
+            const auto center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+            const bool show = ImGui::BeginPopupModal(internal_::title, internal_::open_ptr,
+                                                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking |
+                                                             (internal_::resizable ? 0 : ImGuiWindowFlags_NoResize));
+
+            if (!show) {
+                reset_vars();
+            }
+
+            return show;
+        }
+
         inline bool show_dialog(const char *title, bool *open = nullptr, const ImVec2 *size = nullptr,
                                 const bool resizable = true) {
             if (open != nullptr && !*open) {
                 internal_::reset_vars();
-                return false;
+                return display(false);
             }
 
             if (title == nullptr) {
                 internal_::reset_vars();
-                return false;
+                return display(false);
             }
 
             if (internal_::title == title) {
                 if (internal_::closed) {
                     if (open != nullptr)
                         *open = false;
-                    return false;
+                    return display(false);
                 }
 
                 if (internal_::reset) {
@@ -675,7 +693,7 @@ namespace simpfp {
                 }
 
                 internal_::open_ptr = open;
-                return true;
+                return display(true);
             }
 
             internal_::open_ptr  = open;
@@ -689,7 +707,7 @@ namespace simpfp {
                 ImGui::SetNextWindowSize(*size, ImGuiCond_Appearing);
             }
             ImGui::OpenPopup(internal_::title, ImGuiPopupFlags_NoReopen);
-            return true;
+            return display(true);
         }
 
         inline bool full_width_input(char *buffer, const std::size_t buffer_size, const float alpha = 1.0f,
@@ -835,6 +853,10 @@ namespace simpfp {
         if (labels != nullptr) {
             internal_::labels = *labels;
         }
+        if (context != nullptr) {
+            delete context;
+            context = nullptr;
+        }
     }
 
     inline bool FileDialogOpen() {
@@ -866,6 +888,7 @@ namespace simpfp {
                 delete context;
                 context = nullptr;
             }
+            ImGui::EndPopup();
             return;
         }
 
@@ -875,6 +898,7 @@ namespace simpfp {
                 delete context;
                 context = nullptr;
             }
+            ImGui::EndPopup();
             return;
         }
 
@@ -885,322 +909,315 @@ namespace simpfp {
             }
         }
 
-        const auto center = ImGui::GetMainViewport()->GetCenter();
-        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        static const float reserve_y = (ImGui::GetFrameHeight() * 4) + ImGui::GetStyle().ItemSpacing.y;
 
-        if (ImGui::BeginPopupModal(internal_::title, internal_::open_ptr,
-                                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking |
-                                           (internal_::resizable ? 0 : ImGuiWindowFlags_NoResize))) {
+        constexpr float ratio     = 0.25f;
+        const float     spacing_x = ImGui::GetStyle().ItemSpacing.x;
+        const float     free_x    = ImGui::GetContentRegionAvail().x - spacing_x;
 
-            static const float reserve_y = (ImGui::GetFrameHeight() * 4) + ImGui::GetStyle().ItemSpacing.y;
+        const float free_x_uno = free_x * ratio;
+        const float free_x_des = free_x * (1.f - ratio);
 
-            constexpr float ratio     = 0.25f;
-            const float     spacing_x = ImGui::GetStyle().ItemSpacing.x;
-            const float     free_x    = ImGui::GetContentRegionAvail().x - spacing_x;
+        const bool key_shift = ImGui::IsKeyPressed(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_LeftShift);
+        const bool key_ctrl  = ImGui::IsKeyPressed(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_LeftCtrl);
 
-            const float free_x_uno = free_x * ratio;
-            const float free_x_des = free_x * (1.f - ratio);
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyDown(ImGuiKey_Escape)) {
+            *internal_::open_ptr = false;
+            internal_::closed    = true;
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            if (context != nullptr) {
+                delete context;
+                context = nullptr;
+            }
+            return;
+        }
 
-            const bool key_shift = ImGui::IsKeyPressed(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_LeftShift);
-            const bool key_ctrl  = ImGui::IsKeyPressed(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_LeftCtrl);
+        ImGui::Spacing();
+        ImGui::Text("%s", context->path->c_str());
+        ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("*").x - ImGui::GetStyle().FramePadding.x -
+                        ImGui::GetStyle().ItemSpacing.x);
+        ImGui::TextDisabled("%s", (key_shift || key_ctrl) ? "*" : "");
 
-            if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyDown(ImGuiKey_Escape)) {
-                *internal_::open_ptr = false;
-                internal_::closed    = true;
-                ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-                if (context != nullptr) {
-                    delete context;
-                    context = nullptr;
+        ImGui::BeginChild("##region_dirs", ImVec2(free_x_uno, -reserve_y), ImGuiChildFlags_Borders);
+
+        for (int i = 0; i < context->dirs_num; i++) {
+            auto &dir      = context->dirs[i];
+            bool  selected = false;
+
+            ImGui::PushID(i);
+            if (!dir.read) {
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                ImGui::BeginDisabled(true);
+            }
+            ImGui::Selectable(dir.name, &selected);
+            if (!dir.read) {
+                ImGui::EndDisabled();
+                ImGui::PopStyleVar();
+            }
+            ImGui::PopID();
+
+            if (selected && dir.read) {
+                dir.read = internal_::can_read(internal_::fs::absolute(*dir.path));
+                if (!dir.read)
+                    continue;
+                internal_::FileContext::load(&context, internal_::fs::absolute(*dir.path).c_str());
+                context->peeked = false;
+            }
+        }
+
+        ImGui::EndChild();
+
+        ImGui::SameLine();
+
+        ImGui::BeginChild("##region_files", ImVec2(free_x_des, -reserve_y), ImGuiChildFlags_Borders);
+
+        bool selection_change = false;
+        bool double_click     = false;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(10.0f, 3.0f));
+        if (ImGui::BeginTable("##files_table", 4,
+                              ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_BordersInnerV |
+                                      ImGuiTableFlags_Sortable | ImGuiTableFlags_Resizable |
+                                      ImGuiTableFlags_SizingFixedFit)) {
+
+            ImGui::TableSetupColumn(" File", ImGuiTableColumnFlags_WidthStretch, 0.35f);
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
+            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
+            ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
+            ImGui::TableHeadersRow();
+
+            if (const auto sp = ImGui::TableGetSortSpecs(); sp != nullptr && sp->SpecsDirty) {
+                if (const auto cs = sp->Specs) {
+                    internal_::FileContext::sort(context, (cs->ColumnIndex + 1), cs->SortDirection);
+                    internal_::FileContext::unselect_all(context);
                 }
-                return;
+                sp->SpecsDirty = false;
             }
 
-            ImGui::Spacing();
-            ImGui::Text("%s", context->path->c_str());
-            ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::CalcTextSize("*").x - ImGui::GetStyle().FramePadding.x -
-                            ImGui::GetStyle().ItemSpacing.x);
-            ImGui::TextDisabled("%s", (key_shift || key_ctrl) ? "*" : "");
+            for (int i = 0; i < context->files_num; i++) {
+                const auto &file     = context->files[i];
+                bool        selected = file.selected;
 
-            ImGui::BeginChild("##region_dirs", ImVec2(free_x_uno, -reserve_y), ImGuiChildFlags_Borders);
-
-            for (int i = 0; i < context->dirs_num; i++) {
-                auto &dir      = context->dirs[i];
-                bool  selected = false;
+                const bool disable_select =
+                        internal_::dir_only || !file.read || (!file.write && !internal_::read_only);
 
                 ImGui::PushID(i);
-                if (!dir.read) {
+                if (disable_select) {
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
                     ImGui::BeginDisabled(true);
                 }
-                ImGui::Selectable(dir.name, &selected);
-                if (!dir.read) {
+
+                ImGui::TableNextRow();
+
+                ImGui::TableNextColumn();
+                ImGui::SameLine(0, 5);
+                ImGui::Selectable(file.name, &selected,
+                                  ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap);
+
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Left) &&
+                    ImGui::GetIO().MouseClickedCount[ImGuiMouseButton_Left] == 2) {
+                    double_click = true;
+                }
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%lu", file.size);
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%s", file.type);
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%s", file.time);
+                ImGui::SameLine(0, 5);
+                ImGui::TextDisabled(" ");
+
+                if (disable_select) {
                     ImGui::EndDisabled();
                     ImGui::PopStyleVar();
                 }
+
                 ImGui::PopID();
 
-                if (selected && dir.read) {
-                    dir.read = internal_::can_read(internal_::fs::absolute(*dir.path));
-                    if (!dir.read)
-                        continue;
-                    internal_::FileContext::load(&context, internal_::fs::absolute(*dir.path).c_str());
+                if (internal_::dir_only)
+                    continue;
+
+                if (selected == file.selected)
+                    continue;
+
+                selection_change = true;
+
+                if (!internal_::single && key_ctrl) {
+                    internal_::FileContext::select_add(context, i);
+                    continue;
+                }
+
+                if (!internal_::single && key_shift) {
+                    internal_::FileContext::select_range(context, i);
+                    continue;
+                }
+
+                internal_::FileContext::select_single(context, i);
+            }
+            ImGui::EndTable();
+        }
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
+
+        char                 *buffer  = context->buffer;
+        constexpr std::size_t max_len = internal_::FileContext::buffer_size - 1;
+
+        if (selection_change) {
+            context->peeked = false;
+            std::memset(buffer, 0, internal_::FileContext::buffer_size);
+
+            if (context->selected != nullptr && context->selected_num == 1) {
+                const auto str_src = context->selected[0]->name;
+                std::strncpy(buffer, str_src, std::min(max_len, std::strlen(str_src)));
+            }
+
+            else if (context->selected != nullptr && context->selected_num > 1) {
+                for (int k = 0; k < context->selected_num; k++) {
+                    if (k > 0)
+                        internal_::cat_str(buffer, "; ", max_len);
+                    const auto str_src = context->selected[k]->name;
+                    internal_::cat_str(buffer, str_src, max_len);
+                }
+            }
+        }
+
+        float alpha = 1.0f;
+        if (internal_::dir_only || context->selected_num > 1) {
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+            ImGui::BeginDisabled(true);
+            alpha = 0.5f;
+        }
+
+        const bool      has_filters  = internal_::filters != nullptr;
+        constexpr float filters_size = 100.f;
+
+        if (internal_::full_width_input(buffer, max_len, alpha, has_filters ? filters_size : 0.f)) {
+            context->peeked = false;
+        }
+
+        if (internal_::dir_only || context->selected_num > 1) {
+            ImGui::EndDisabled();
+            ImGui::PopStyleVar();
+        }
+
+        if (has_filters && internal_::select_filter(context)) {
+            std::memset(context->buffer, 0, internal_::FileContext::buffer_size);
+            internal_::FileContext::reload(&context);
+            context->peeked = false;
+        }
+
+        ImGui::Spacing();
+
+        const bool can_save = context->read && (context->write || internal_::read_only) &&
+                              (internal_::accept_empty || std::strlen(buffer) > 0);
+
+        bool create = false;
+        bool cancel = false;
+        bool accept = false;
+
+        if (!internal_::read_only) {
+            if (context->read && context->write)
+                internal_::buttons_dir(&create);
+            else
+              internal_::buttons_dir(nullptr);
+        } else {
+            ImGui::Dummy(ImVec2(1.0f, ImGui::GetFrameHeight()));
+        }
+
+        ImGui::Spacing();
+
+        internal_::buttons_action(&cancel, can_save ? &accept : nullptr);
+
+        if (cancel) {
+            *internal_::open_ptr = false;
+            internal_::closed    = true;
+            ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+            if (context != nullptr) {
+                delete context;
+                context = nullptr;
+            }
+            return;
+        }
+
+        static char new_name_buffer[128];
+        static bool allowed = false;
+        if (!internal_::read_only && create) {
+            allowed = false;
+            std::memset(new_name_buffer, 0, sizeof(new_name_buffer));
+            ImGui::OpenPopup(internal_::labels.dir_title);
+        }
+
+        const auto offset     = ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x * 2;
+        const auto title_size = ImGui::CalcTextSize(internal_::labels.dir_input).x + offset * 4;
+
+        const auto center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(title_size, 0));
+
+        if (!internal_::read_only &&
+            ImGui::BeginPopupModal(internal_::labels.dir_title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+
+            ImGui::Spacing();
+            ImGui::Spacing();
+
+            ImGui::Text("%s", internal_::labels.dir_input);
+            ImGui::Spacing();
+
+            if (internal_::full_width_input(new_name_buffer, sizeof(new_name_buffer))) {
+                allowed = std::strlen(new_name_buffer) > 0 &&
+                          !internal_::fs::exists(internal_::fs::absolute(*context->path / new_name_buffer));
+            }
+
+            ImGui::Spacing();
+            ImGui::Spacing();
+
+            const float ok_size = ImGui::CalcTextSize(internal_::labels.dir_accept).x + offset;
+            const float no_size = ImGui::CalcTextSize(internal_::labels.dir_cancel).x + offset;
+            const float free_w  = ImGui::GetContentRegionMax().x;
+            const float spacing = ImGui::GetStyle().ItemSpacing.x;
+
+            ImGui::SetCursorPosX(free_w - (ok_size + no_size + spacing));
+
+            if (!allowed) {
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                ImGui::BeginDisabled(true);
+            }
+            if (ImGui::Button(internal_::labels.dir_accept, ImVec2(ok_size, 0)) && allowed) {
+                allowed            = false;
+                const auto new_dir = internal_::fs::absolute(*context->path / new_name_buffer);
+                if (!internal_::fs::exists(new_dir) && internal_::fs::create_directory(new_dir)) {
+                    std::memset(new_name_buffer, 0, sizeof(new_name_buffer));
+                    ImGui::CloseCurrentPopup();
+                    internal_::FileContext::reload(&context);
                     context->peeked = false;
                 }
             }
-
-            ImGui::EndChild();
-
-            ImGui::SameLine();
-
-            ImGui::BeginChild("##region_files", ImVec2(free_x_des, -reserve_y), ImGuiChildFlags_Borders);
-
-            bool selection_change = false;
-            bool double_click     = false;
-
-            ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(10.0f, 3.0f));
-            if (ImGui::BeginTable("##files_table", 4,
-                                  ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_BordersInnerV |
-                                          ImGuiTableFlags_Sortable | ImGuiTableFlags_Resizable |
-                                          ImGuiTableFlags_SizingFixedFit)) {
-
-                ImGui::TableSetupColumn(" File", ImGuiTableColumnFlags_WidthStretch, 0.35f);
-                ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
-                ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
-                ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
-                ImGui::TableHeadersRow();
-
-                if (const auto sp = ImGui::TableGetSortSpecs(); sp != nullptr && sp->SpecsDirty) {
-                    if (const auto cs = sp->Specs) {
-                        internal_::FileContext::sort(context, (cs->ColumnIndex + 1), cs->SortDirection);
-                        internal_::FileContext::unselect_all(context);
-                    }
-                    sp->SpecsDirty = false;
-                }
-
-                for (int i = 0; i < context->files_num; i++) {
-                    const auto &file     = context->files[i];
-                    bool        selected = file.selected;
-
-                    const bool disable_select =
-                            internal_::dir_only || !file.read || (!file.write && !internal_::read_only);
-
-                    ImGui::PushID(i);
-                    if (disable_select) {
-                        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                        ImGui::BeginDisabled(true);
-                    }
-
-                    ImGui::TableNextRow();
-
-                    ImGui::TableNextColumn();
-                    ImGui::SameLine(0, 5);
-                    ImGui::Selectable(file.name, &selected,
-                                      ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap);
-
-                    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) &&
-                        ImGui::GetIO().MouseClickedCount[ImGuiMouseButton_Left] == 2) {
-                        double_click = true;
-                    }
-
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%lu", file.size);
-
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%s", file.type);
-
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%s", file.time);
-                    ImGui::SameLine(0, 5);
-                    ImGui::TextDisabled(" ");
-
-                    if (disable_select) {
-                        ImGui::EndDisabled();
-                        ImGui::PopStyleVar();
-                    }
-
-                    ImGui::PopID();
-
-                    if (internal_::dir_only)
-                        continue;
-
-                    if (selected == file.selected)
-                        continue;
-
-                    selection_change = true;
-
-                    if (!internal_::single && key_ctrl) {
-                        internal_::FileContext::select_add(context, i);
-                        continue;
-                    }
-
-                    if (!internal_::single && key_shift) {
-                        internal_::FileContext::select_range(context, i);
-                        continue;
-                    }
-
-                    internal_::FileContext::select_single(context, i);
-                }
-                ImGui::EndTable();
-            }
-            ImGui::PopStyleVar();
-            ImGui::EndChild();
-
-            char                 *buffer  = context->buffer;
-            constexpr std::size_t max_len = internal_::FileContext::buffer_size - 1;
-
-            if (selection_change) {
-                context->peeked = false;
-                std::memset(buffer, 0, internal_::FileContext::buffer_size);
-
-                if (context->selected != nullptr && context->selected_num == 1) {
-                    const auto str_src = context->selected[0]->name;
-                    std::strncpy(buffer, str_src, std::min(max_len, std::strlen(str_src)));
-                }
-
-                else if (context->selected != nullptr && context->selected_num > 1) {
-                    for (int k = 0; k < context->selected_num; k++) {
-                        if (k > 0)
-                            internal_::cat_str(buffer, "; ", max_len);
-                        const auto str_src = context->selected[k]->name;
-                        internal_::cat_str(buffer, str_src, max_len);
-                    }
-                }
-            }
-
-            float alpha = 1.0f;
-            if (internal_::dir_only || context->selected_num > 1) {
-                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                ImGui::BeginDisabled(true);
-                alpha = 0.5f;
-            }
-
-            const bool      has_filters  = internal_::filters != nullptr;
-            constexpr float filters_size = 100.f;
-
-            if (internal_::full_width_input(buffer, max_len, alpha, has_filters ? filters_size : 0.f)) {
-                context->peeked = false;
-            }
-
-            if (internal_::dir_only || context->selected_num > 1) {
+            if (!allowed) {
                 ImGui::EndDisabled();
                 ImGui::PopStyleVar();
             }
 
-            if (has_filters && internal_::select_filter(context)) {
-                std::memset(context->buffer, 0, internal_::FileContext::buffer_size);
-                internal_::FileContext::reload(&context);
-                context->peeked = false;
-            }
-
-            ImGui::Spacing();
-
-            const bool can_save = context->read && (context->write || internal_::read_only) &&
-                                  (internal_::accept_empty || std::strlen(buffer) > 0);
-
-            bool create = false;
-            bool cancel = false;
-            bool accept = false;
-
-            if (!internal_::read_only) {
-                if (context->read && context->write)
-                    internal_::buttons_dir(&create);
-                else
-                  internal_::buttons_dir(nullptr);
-            } else {
-                ImGui::Dummy(ImVec2(1.0f, ImGui::GetFrameHeight()));
-            }
-
-            ImGui::Spacing();
-
-            internal_::buttons_action(&cancel, can_save ? &accept : nullptr);
-
-            if (cancel) {
-                *internal_::open_ptr = false;
-                internal_::closed    = true;
-                ImGui::CloseCurrentPopup();
-                ImGui::EndPopup();
-                if (context != nullptr) {
-                    delete context;
-                    context = nullptr;
-                }
-                return;
-            }
-
-            static char new_name_buffer[128];
-            static bool allowed = false;
-            if (!internal_::read_only && create) {
-                allowed = false;
+            ImGui::SameLine();
+            if (ImGui::Button(internal_::labels.dir_cancel, ImVec2(no_size, 0))) {
                 std::memset(new_name_buffer, 0, sizeof(new_name_buffer));
-                ImGui::OpenPopup(internal_::labels.dir_title);
+                ImGui::CloseCurrentPopup();
+                allowed = false;
             }
-
-            const auto offset     = ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x * 2;
-            const auto title_size = ImGui::CalcTextSize(internal_::labels.dir_input).x + offset * 4;
-
-            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(title_size, 0));
-
-            if (!internal_::read_only &&
-                ImGui::BeginPopupModal(internal_::labels.dir_title, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-
-                ImGui::Spacing();
-                ImGui::Spacing();
-
-                ImGui::Text("%s", internal_::labels.dir_input);
-                ImGui::Spacing();
-
-                if (internal_::full_width_input(new_name_buffer, sizeof(new_name_buffer))) {
-                    allowed = std::strlen(new_name_buffer) > 0 &&
-                              !internal_::fs::exists(internal_::fs::absolute(*context->path / new_name_buffer));
-                }
-
-                ImGui::Spacing();
-                ImGui::Spacing();
-
-                const float ok_size = ImGui::CalcTextSize(internal_::labels.dir_accept).x + offset;
-                const float no_size = ImGui::CalcTextSize(internal_::labels.dir_cancel).x + offset;
-                const float free_w  = ImGui::GetContentRegionMax().x;
-                const float spacing = ImGui::GetStyle().ItemSpacing.x;
-
-                ImGui::SetCursorPosX(free_w - (ok_size + no_size + spacing));
-
-                if (!allowed) {
-                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::BeginDisabled(true);
-                }
-                if (ImGui::Button(internal_::labels.dir_accept, ImVec2(ok_size, 0)) && allowed) {
-                    allowed            = false;
-                    const auto new_dir = internal_::fs::absolute(*context->path / new_name_buffer);
-                    if (!internal_::fs::exists(new_dir) && internal_::fs::create_directory(new_dir)) {
-                        std::memset(new_name_buffer, 0, sizeof(new_name_buffer));
-                        ImGui::CloseCurrentPopup();
-                        internal_::FileContext::reload(&context);
-                        context->peeked = false;
-                    }
-                }
-                if (!allowed) {
-                    ImGui::EndDisabled();
-                    ImGui::PopStyleVar();
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button(internal_::labels.dir_cancel, ImVec2(no_size, 0))) {
-                    std::memset(new_name_buffer, 0, sizeof(new_name_buffer));
-                    ImGui::CloseCurrentPopup();
-                    allowed = false;
-                }
-                ImGui::EndPopup();
-            }
-
-            if (accept || (can_save && double_click)) {
-                context->accepted = true;
-                ImGui::EndPopup();
-                return;
-            }
-
             ImGui::EndPopup();
         }
+
+        if (accept || (can_save && double_click)) {
+            context->accepted = true;
+            ImGui::EndPopup();
+            return;
+        }
+
+        ImGui::EndPopup();
 
         if (internal_::open_ptr != nullptr && !*internal_::open_ptr) {
             internal_::closed = true;
