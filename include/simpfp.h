@@ -979,8 +979,8 @@ namespace simpfp {
         if (ImGui::BeginTable("##files_table", 4,
                               ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_BordersInnerV |
                                       ImGuiTableFlags_Sortable | ImGuiTableFlags_Resizable |
-                                      ImGuiTableFlags_SizingFixedFit)) {
-
+                                      ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
+            ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableSetupColumn(" File", ImGuiTableColumnFlags_WidthStretch, 0.35f);
             ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
             ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
