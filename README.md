@@ -84,7 +84,9 @@ namespace  simpfp {
     
     bool PeekSelected(char *buffer_out, std::size_t size);
     bool PeekSelected(char *buffer_out, std::size_t size, std::size_t index);
-    
+
+    bool FilterSelected(int *filter_idx);
+
     const char *CurrentPath();
     
     bool FileDialogOpen();
