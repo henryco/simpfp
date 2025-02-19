@@ -1126,6 +1126,7 @@ namespace simpfp {
         constexpr float filters_size = 100.f;
 
         if (internal_::full_width_input(buffer, max_len, alpha, has_filters ? filters_size : 0.f)) {
+            internal_::FileContext::unselect_all(context);
             context->peeked = false;
         }
 
