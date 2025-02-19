@@ -49,6 +49,8 @@ namespace simpfp {
     bool PeekSelected(char *buffer_out, std::size_t size);
     bool PeekSelected(char *buffer_out, std::size_t size, std::size_t index);
 
+    bool FilterSelected(int *filter_idx);
+
     const char *CurrentPath();
 
     bool FileDialogOpen();
@@ -833,73 +835,7 @@ namespace simpfp {
                                                 ImVec2(input_pos.x + input_size.x, input_pos.y + input_size.y),
                                                 IM_COL32(0, 0, 0, 90 * alpha));
 
-            return context->filter_idx != prev_index;//
-// Created by xd on 02/02/25.
-//
-// ReSharper disable CppDFANullDereference
-
-#ifndef SIMPFP_H
-#define SIMPFP_H
-
-#include <algorithm>
-#include <chrono>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <regex>
-#include <random>
-#include <string.h>
-
-namespace simpfp {
-
-    struct Labels {
-        const char *main_accept = "Select";
-        const char *main_cancel = "Cancel";
-        const char *main_create = "New Directory";
-        const char *dir_title   = "New Folder";
-        const char *dir_input   = "Enter a new folder name:";
-        const char *dir_accept  = "OK";
-        const char *dir_cancel  = "Cancel";
-    };
-
-    /**
-     * @param title title of the file picker window
-     * @param default_path can be path to a directory or a file
-     * @param filters array of glob-style strings, ie: *.cpp / *.txt / *.md / etc.
-     * <br/><b>Must be terminated with nullptr!</b>
-     * @param labels custom labels
-     * @param read_only require only read permission
-     * @param accept_empty allow empty selection
-     * @param dir_only show/accept only directories
-     */
-    void OpenFileDialog(const char *title, const char *default_path = nullptr, const char **filters = nullptr,
-                        const Labels *labels = nullptr, bool read_only = false, bool accept_empty = false, bool dir_only = false);
-
-    bool ShowFileDialog(const char *label, bool *open, const ImVec2 &size, bool resize = true);
-    bool ShowFileDialog(const char *label, bool *open = nullptr);
-
-    bool FileAccepted(char *buffer_out, std::size_t size);
-    bool FileAccepted(char *buffer_out, std::size_t size, std::size_t index);
-
-    bool PeekSelected(char *buffer_out, std::size_t size);
-    bool PeekSelected(char *buffer_out, std::size_t size, std::size_t index);
-
-    const char *CurrentPath();
-
-    bool FileDialogOpen();
-    void CloseFileDialog();
-    void EndFileDialog();
-
-    long CountSelected();
-    void UnselectAll();
-    void ResetBuffer();
-    void Reload();
-
-    namespace internal_ {
-        namespace fs = std::filesystem;
-
-#define SORT_NONE 0
-
+            return context->filter_idx != prev_index;
         }
 
     } // namespace internal_
@@ -1359,6 +1295,13 @@ namespace simpfp {
         if (context == nullptr || context->path == nullptr)
             return nullptr;
         return context->path->c_str();
+    }
+
+    inline bool FilterSelected(int *filter_idx) {
+        if (context == nullptr || internal_::filters == nullptr)
+            return false;
+        *filter_idx = context->filter_idx;
+        return true;
     }
 
     inline bool PeekSelected(char *buffer_out, const std::size_t size) {
