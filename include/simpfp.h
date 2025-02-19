@@ -738,7 +738,7 @@ namespace simpfp {
         }
 
         inline void buttons_dir(bool *create) {
-            const float offset  = ImGui::GetStyle().FramePadding.x + ImGui::GetStyle().ItemSpacing.x;
+            const float offset  = ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x * 2;
             const float ok_size = ImGui::CalcTextSize(internal_::labels.main_create).x + offset;
 
             if (create == nullptr) {
@@ -764,15 +764,18 @@ namespace simpfp {
             const float ok_size = ImGui::CalcTextSize(internal_::labels.main_accept).x + offset;
             const float no_size = ImGui::CalcTextSize(internal_::labels.main_cancel).x + offset;
 
+            const float max_size = ok_size > no_size ? ok_size : no_size;
+
+
             const float available_width = ImGui::GetContentRegionMax().x;
 
-            ImGui::SetCursorPosX(available_width - (ok_size + no_size + spacing));
+            ImGui::SetCursorPosX(available_width - (max_size + max_size + spacing));
 
             if (cancel == nullptr) {
                 ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
                 ImGui::BeginDisabled(true);
             }
-            if (ImGui::Button(internal_::labels.main_cancel, ImVec2(ok_size, 0))) {
+            if (ImGui::Button(internal_::labels.main_cancel, ImVec2(max_size, 0))) {
                 if (cancel != nullptr)
                     *cancel = true;
             }
@@ -787,7 +790,7 @@ namespace simpfp {
                 ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
                 ImGui::BeginDisabled(true);
             }
-            if (ImGui::Button(internal_::labels.main_accept, ImVec2(no_size, 0))) {
+            if (ImGui::Button(internal_::labels.main_accept, ImVec2(max_size, 0))) {
                 if (accept != nullptr)
                     *accept = true;
             }
@@ -830,7 +833,73 @@ namespace simpfp {
                                                 ImVec2(input_pos.x + input_size.x, input_pos.y + input_size.y),
                                                 IM_COL32(0, 0, 0, 90 * alpha));
 
-            return context->filter_idx != prev_index;
+            return context->filter_idx != prev_index;//
+// Created by xd on 02/02/25.
+//
+// ReSharper disable CppDFANullDereference
+
+#ifndef SIMPFP_H
+#define SIMPFP_H
+
+#include <algorithm>
+#include <chrono>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <regex>
+#include <random>
+#include <string.h>
+
+namespace simpfp {
+
+    struct Labels {
+        const char *main_accept = "Select";
+        const char *main_cancel = "Cancel";
+        const char *main_create = "New Directory";
+        const char *dir_title   = "New Folder";
+        const char *dir_input   = "Enter a new folder name:";
+        const char *dir_accept  = "OK";
+        const char *dir_cancel  = "Cancel";
+    };
+
+    /**
+     * @param title title of the file picker window
+     * @param default_path can be path to a directory or a file
+     * @param filters array of glob-style strings, ie: *.cpp / *.txt / *.md / etc.
+     * <br/><b>Must be terminated with nullptr!</b>
+     * @param labels custom labels
+     * @param read_only require only read permission
+     * @param accept_empty allow empty selection
+     * @param dir_only show/accept only directories
+     */
+    void OpenFileDialog(const char *title, const char *default_path = nullptr, const char **filters = nullptr,
+                        const Labels *labels = nullptr, bool read_only = false, bool accept_empty = false, bool dir_only = false);
+
+    bool ShowFileDialog(const char *label, bool *open, const ImVec2 &size, bool resize = true);
+    bool ShowFileDialog(const char *label, bool *open = nullptr);
+
+    bool FileAccepted(char *buffer_out, std::size_t size);
+    bool FileAccepted(char *buffer_out, std::size_t size, std::size_t index);
+
+    bool PeekSelected(char *buffer_out, std::size_t size);
+    bool PeekSelected(char *buffer_out, std::size_t size, std::size_t index);
+
+    const char *CurrentPath();
+
+    bool FileDialogOpen();
+    void CloseFileDialog();
+    void EndFileDialog();
+
+    long CountSelected();
+    void UnselectAll();
+    void ResetBuffer();
+    void Reload();
+
+    namespace internal_ {
+        namespace fs = std::filesystem;
+
+#define SORT_NONE 0
+
         }
 
     } // namespace internal_
@@ -975,16 +1044,41 @@ namespace simpfp {
         bool selection_change = false;
         bool double_click     = false;
 
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(10.0f, 3.0f));
+        constexpr float cell_padding_w = 10.f;
+        static const float scrollbar_width = ImGui::GetStyle().ScrollbarSize + (6.f * cell_padding_w);
+
+        const float available_x = ImGui::GetContentRegionAvail().x;
+        const float available_y = ImGui::GetContentRegionAvail().y;
+
+        static auto date_column_width = ImGui::CalcTextSize(" YYYY-MM-DD hh:mm:ss ").x;
+        static auto type_column_width = ImGui::CalcTextSize(" .tar.gz ").x;
+        static auto size_column_width = ImGui::CalcTextSize(" 1234567 ").x;
+        const auto name_column_width = available_x - (date_column_width + type_column_width + size_column_width + scrollbar_width);
+
+        const auto border_flags = (context->files_num <= 0) ? ImGuiTableFlags_NoBordersInBody : ImGuiTableFlags_BordersInnerV;
+        constexpr auto def_col_flags = ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_NoHide;
+
+        static float prev_width = available_x;
+        int name_col_flags = def_col_flags;
+        if (prev_width != available_x) {
+            name_col_flags |= ImGuiTableColumnFlags_WidthStretch;
+            prev_width = available_x;
+        } else {
+            name_col_flags |= ImGuiTableColumnFlags_WidthFixed;
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(cell_padding_w, 3.0f));
         if (ImGui::BeginTable("##files_table", 4,
-                              ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_BordersInnerV |
-                                      ImGuiTableFlags_Sortable | ImGuiTableFlags_Resizable |
-                                      ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit)) {
-            ImGui::TableSetupScrollFreeze(0, 1);
-            ImGui::TableSetupColumn(" File", ImGuiTableColumnFlags_WidthStretch, 0.35f);
-            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
-            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
-            ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoHide);
+                              border_flags | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_Sortable |
+                                      ImGuiTableFlags_Resizable | ImGuiTableFlags_PreciseWidths |
+                                      ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
+                              ImVec2(available_x, available_y))) {
+
+            ImGui::TableSetupColumn(" File", name_col_flags, name_column_width);
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed | def_col_flags, size_column_width);
+            ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed | def_col_flags, type_column_width);
+            ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthStretch | def_col_flags, date_column_width);
+            ImGui::TableSetupScrollFreeze(1, 1);
             ImGui::TableHeadersRow();
 
             if (const auto sp = ImGui::TableGetSortSpecs(); sp != nullptr && sp->SpecsDirty) {
@@ -999,8 +1093,7 @@ namespace simpfp {
                 const auto &file     = context->files[i];
                 bool        selected = file.selected;
 
-                const bool disable_select =
-                        internal_::dir_only || !file.read || (!file.write && !internal_::read_only);
+                const bool disable_select = internal_::dir_only || !file.read || (!file.write && !internal_::read_only);
 
                 ImGui::PushID(i);
                 if (disable_select) {
@@ -1058,6 +1151,7 @@ namespace simpfp {
 
                 internal_::FileContext::select_single(context, i);
             }
+
             ImGui::EndTable();
         }
         ImGui::PopStyleVar();
